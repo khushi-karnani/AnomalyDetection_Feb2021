@@ -1,5 +1,7 @@
-# Anomaly Detection using Resting Heart Rate data of Feb 2021
-# few segments of code taken from https://github.com/gireeshkbogu/AnomalyDetect/blob/master/scripts/rhrad_offline.py
+# Anomaly Detection using Resting Heart Rate and Heart rate over steps data of Feb 2021
+# Separate baselines defined for weekdays and weekends because of evident differences between the two
+# Ignore the warnings, they occur because I am overwritting values while grouping
+# few segments of code taken from https://github.com/gireeshkbogu/AnomalyDetect/blob/master/scripts/
 
 import numpy as np
 import pandas as pd
@@ -10,7 +12,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.covariance import EllipticEnvelope
 import os
 
+# class RHR line:133
+# class HROS line:230
 
+#my jupyter notebook and all the raw data files were in the same folder hence the folder string is './' 
 #importing intraday_heartrate data into DataFrames from df1 to df28
 folder = './'
 
@@ -221,13 +226,116 @@ class RHR:
 
         plt.plot()
         plt.savefig('RHR.jpg', dpi=300, bbox_inches='tight')
+        
+        
     
-model = RHR()
+#HROS
+class HROS:
+    
+    # calculate Heart rate over steps
+    
+    def heart_rate_over_steps(self, df_feb_merged): #input the dataset containing data for the entire month
+        hros=df_feb_merged.drop(['Calories Burnt','Elevation (m)','Minutes Asleep','Sleep Type','filename','Steps_window_12'],axis=1)
+        hros["Steps"] = hros["Steps"].apply(lambda x: x + 1)
+        hros['HeartRate'] = (hros['HeartRate']/hros['Steps']) 
+        #hros contains Heart Rate Over Steps data under 'HeartRate'
+        return hros
+        
+    # preprocessing
+    
+    def preprocessing(self, hros): #input dataset containing heart rate over steps data
+        # smooth data
+        hros_nonas = hros.dropna()
+        hros_rom = hros_nonas.rolling(400).mean()
+        # resample
+        hros2 = hros_rom.resample('1H').mean()
+        hros2 = hros2.dropna()
+        return hros2
+    
+    # grouping and then standardizing the heart rate over steps values
+    
+    def group_normalize(self, hros2): #input dataset containing preprocessed data
+        #grouping according to weekdays and weekends
+        hros_backup=hros2.reset_index()
 
-df_feb_data = model.resting_heart_rate(df_feb_merged)
-data = model.preprocessing(df_feb_data)
-norm_data = model.group_normalize(data)
-data = model.anomaly_detection(norm_data)
-model.visualize(data)
+        hros2['dayofweek']=hros2.index.strftime("%A")
+        hros2['Weekday']=[[''] for c in range(0,617)]
+        for i in range(0,617):
+            if hros2['dayofweek'][i]=='Sunday' or hros2['dayofweek'][i]=='Saturday':
+                hros2['Weekday'][i]='2. No'
+            else:
+                hros2['Weekday'][i]='1. Yes'
+        
+        hros2=hros2.set_index('Weekday')
+        hros2=hros2.drop(['dayofweek'],axis=1)
+        
+        #normalizing the heart rate over steps values by grouping them separately for weekdays and weekends
+        dfhros_rescaled = hros2.groupby(hros2.index).apply(StandardScaler().fit_transform)
+        
+        hros_list = []
+        for sublist in dfhros_rescaled:
+            for item in sublist:
+                hros_list.append(item)
+
+        hros_backup['re_scaled_heart']=0.0
+        hros_backup['re_scaled_step']=0.0
+        for i in range(0,617):
+            hros_backup['re_scaled_heart'][i]=hros_list[i][0]
+            hros_backup['re_scaled_step'][i]=hros_list[i][1]
+        
+        hros_backup=hros_backup.set_index('Time')
+        hros_data = hros_backup.drop(['HeartRate','Steps'],axis=1).fillna(0)
+        hros_data=hros_data.rename(columns={"re_scaled_heart": "HeartRate","re_scaled_step": "Steps"})
+
+        return hros_data #contains the normalized heart rate over steps and steps data
+    
+    
+    def anomaly_detection(self, hros_data): #input normalized hros data
+        """
+        This function takes the standardized data and detects outliers using Gaussian density estimation.
+        """
+        model_hros =  EllipticEnvelope(contamination=0.1, random_state=10, support_fraction=0.7)
+
+        model_hros.fit(hros_data)
+        hros_preds = pd.DataFrame(model_hros.predict(hros_data))
+        hros_preds = hros_preds.rename(lambda x: 'anomaly' if x == 0 else x, axis=1)
+        hros_data = hros_data.reset_index()
+        hros_data = hros_data.join(hros_preds)
+        return hros_data
+    
+    def visualize(self, hros_data): #input dataset having anomaly detection predictions
+
+        plt.rcdefaults()
+        fig, ax = plt.subplots(1, figsize=(80,15))
+        ah = hros_data.loc[hros_data['anomaly'] == -1, ('Time', 'HeartRate')] #anomaly
+        bh = ah[(ah['HeartRate'] > 0)]
+        ax.bar(hros_data['Time'], hros_data['HeartRate'], linestyle='-',color='midnightblue' ,lw=6, width=0.02)
+        ax.scatter(ah['Time'],ah['HeartRate'], color='red', label='Anomaly', s=500) #I've used ah instead of bh
+
+        ax.tick_params(axis='both', which='major', color='blue', labelsize=50)
+        ax.tick_params(axis='both', which='minor', color='blue', labelsize=50)
+        ax.set_title('February 2021',fontweight="bold", size=70) # Title
+        ax.set_ylabel('Std. HROS\n', fontsize = 70) 
+
+        plt.plot()
+        plt.savefig('HROS.jpg', dpi=300, bbox_inches='tight')
+
+        
+rhr_model = RHR()
+
+df_feb_data = rhr_model.resting_heart_rate(df_feb_merged)
+data = rhr_model.preprocessing(df_feb_data)
+norm_data = rhr_model.group_normalize(data)
+data = rhr_model.anomaly_detection(norm_data)
+rhr_model.visualize(data)
+
+
+hros_model = HROS()
+
+hros = hros_model.heart_rate_over_steps(df_feb_merged)
+hros2 = hros_model.preprocessing(hros)
+norm_hros = hros_model.group_normalize(hros2)
+hros = hros_model.anomaly_detection(norm_hros)
+hros_model.visualize(hros)
 
 #ignore the warnings, they occur because I am overwritting values while grouping
