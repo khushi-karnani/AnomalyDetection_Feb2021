@@ -1,8 +1,5 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[3]:
-
+# Anomaly Detection using Resting Heart Rate data of Feb 2021
+# few segments of code taken from https://github.com/gireeshkbogu/AnomalyDetect/blob/master/scripts/rhrad_offline.py
 
 import numpy as np
 import pandas as pd
@@ -50,7 +47,7 @@ for file in filelist:
     exec("df%d_sleep = pd.read_csv('%s')" % (i, os.path.join(folder,file)))
     exec("df%d_sleep['filename'] = '%s'" % (i,os.path.basename(file).split('.')[0].split('_')[2]+" "))
     exec("data.append(df%d_sleep)" % (i))
-    #missing data for day 23 and 26
+    #missing sleep data for day 23 and 26
     if i==22 or i==25:
         i+=2
     else:
@@ -110,23 +107,22 @@ for i in range(1,29):
     exec("df%d_sleep=df%d_sleep.set_index(['Time'])"%(i,i))
     
 #creating dummy df23_sleep and df26_sleep dataframe  
-df23_sleep=df1_sleep
-df26_sleep=df1_sleep
+df23_sleep = df1_sleep
+df26_sleep = df1_sleep
 
 a=['Minutes Asleep','Sleep Type','filename']
 for i in a:
     df23_sleep[i]=np.nan
     df26_sleep[i]=np.nan
     
-
     
 #merging columns of all datasets to form daywise datasets having all columns (di_allcols for day i)
 for i in range(1,29):
     exec("d%d_allcols = pd.merge(df%d,pd.merge(df%d_step,df%d_sleep, on='Time',how='outer'), on='Time',how='outer')"%(i,i,i,i))
 
 #merging all di_allcols into a single dataframe
-list_di_allcols=[d2_allcols,d3_allcols,d4_allcols,d5_allcols,d6_allcols,d7_allcols,d8_allcols,d9_allcols,d10_allcols,d11_allcols,d12_allcols,d13_allcols,d14_allcols,d15_allcols,d16_allcols,d17_allcols,d18_allcols,d19_allcols,d20_allcols,d21_allcols,d22_allcols,d23_allcols,d24_allcols,d25_allcols,d26_allcols,d27_allcols,d28_allcols]
-df_feb_merged=d1_allcols.append(list_di_allcols) #dataframe having data for the entire month
+list_di_allcols = [d2_allcols,d3_allcols,d4_allcols,d5_allcols,d6_allcols,d7_allcols,d8_allcols,d9_allcols,d10_allcols,d11_allcols,d12_allcols,d13_allcols,d14_allcols,d15_allcols,d16_allcols,d17_allcols,d18_allcols,d19_allcols,d20_allcols,d21_allcols,d22_allcols,d23_allcols,d24_allcols,d25_allcols,d26_allcols,d27_allcols,d28_allcols]
+df_feb_merged = d1_allcols.append(list_di_allcols) #dataframe having data for the entire month
 
 
 
@@ -185,7 +181,7 @@ class RHR:
         for i in range(0,598):
             data_backup['re_scaled'][i]=flat_list[i][0]
 
-        data_backup=data_backup.set_index('Time')
+        data_backup = data_backup.set_index('Time')
         data = data_backup.drop(['HeartRate'],axis=1).fillna(0)
         data=data.rename(columns={"re_scaled": "HeartRate"})
 
@@ -206,6 +202,11 @@ class RHR:
     
     
     def visualize(self, data): #input dataset having anomaly detection predictions
+        """
+        visualize results and also save them to a .csv file
+        Red dots: Anomaly points
+        """
+        
         plt.rcdefaults()
         fig, ax = plt.subplots(1, figsize=(80,15))
         a = data.loc[data['anomaly'] == -1, ('Time', 'HeartRate')] #anomaly
@@ -230,4 +231,3 @@ data = model.anomaly_detection(norm_data)
 model.visualize(data)
 
 #ignore the warnings, they occur because I am overwritting values while grouping
-
